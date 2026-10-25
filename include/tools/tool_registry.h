@@ -66,8 +66,9 @@ public:
     static std::size_t hash(std::string_view key) noexcept;
 
 private:
-    // ===== YOUR REPRESENTATION GOES HERE =====
-    // Your buckets, your element count, and any private helpers you want
-    // (for example a rehash function). Store std::unique_ptr<Tool> in the
-    // buckets so that pointers handed out by find() survive a resize.
+
+    std::vector<std::unique_ptr<Tool>> buckets;
+    std::size_t count = 0;
+    std::size_t distance = 16;
+    void rehash();
 };

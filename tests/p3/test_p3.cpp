@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <iostream>
 
 namespace fs = std::filesystem;
 
@@ -94,14 +95,167 @@ TEST(calc_division_by_zero) {
     CHECK(err == "division by zero");
 }
 
-// ------------------------------------------------------------- your tests
-//
-// Still to write (spec §6 has the full list). Suggested names:
-//   reg_null_rejected, reg_for_each_visits_each_once
-//   reg_10000_tools               REQUIRED: print bucket_count / load_factor /
-//                                 max_probe_length, check the bound
-//   reg_alternative_hash          REQUIRED: longest chain of a weak hash
-//   ws_<case>                     REQUIRED: every row of the table in spec §4.4
-//   calc_<case>                   left-to-right, parentheses, negatives
+TEST(reg_null_rejected) {
+    ToolRegistry r;
+    CHECK(!r.add(nullptr));
+    CHECK(r.size() == 0);
+}
+
+TEST(reg_for_each_visits_each_once) {
+    ToolRegistry r;
+    std::vector<std::string> names = {"a", "b", "c", "d"};
+    for (const std::string& n : names) {
+        REQUIRE(r.add(std::make_unique<NamedTool>(n)));
+    }
+    std::vector<std::string> seen;
+    r.for_each([&](const Tool& t) { seen.push_back(t.name()); });
+    CHECK(seen.size() == names.size());
+    for (const std::string& n : names) {
+        int times = 0;
+        for (const std::string& s : seen) {
+            if (s == n) {
+                times++;
+            }
+        }
+        CHECK(times == 1);
+    }
+}
+
+TEST(reg_10000_tools) {
+    ToolRegistry r;
+    Tool* first = nullptr;
+    for (int i = 0; i < 10000; i++) {
+        auto t = std::make_unique<NamedTool>("tool_" + std::to_string(i));
+        Tool* raw = t.get();
+        REQUIRE(r.add(std::move(t)));
+        if (i == 0) {
+            first = raw;
+        }
+        CHECK(r.load_factor() <= 1.0);
+    }
+    CHECK(r.size() == 10000);
+    for (int i = 0; i < 10000; i++) {
+        CHECK(r.find("tool_" + std::to_string(i)) != nullptr);
+    }
+    CHECK(r.find("tool_0") == first);
+    CHECK(r.max_probe_length() <= 64);
+    std::cout << "bucket_count=" << r.bucket_count()
+              << " load_factor=" << r.load_factor()
+              << " max_probe_length=" << r.max_probe_length() << std::endl;
+}
+
+TEST(reg_alternative_hash) {
+    ToolRegistry r;
+    for (int i = 0; i < 10000; i++) {
+        REQUIRE(r.add(std::make_unique<NamedTool>("tool_" + std::to_string(i))));
+    }
+    std::vector<int> counts(r.bucket_count(), 0);
+    int longest = 0;
+    for (int i = 0; i < 10000; i++) {
+        std::string s = "tool_" + std::to_string(i);
+        std::size_t index = (s[0] + s.size()) % counts.size();
+        counts[index]++;
+        if (counts[index] > longest) {
+            longest = counts[index];
+        }
+    }
+    std::cout << "fnv1a_max_probe_length=" << r.max_probe_length()
+              << " weak_hash_longest_chain=" << longest << std::endl;
+    CHECK(longest > 64);
+}
+
+TEST(ws_accepts_valid_paths) {
+    TempDir d;
+    Workspace ws(d.path());
+    fs::path out;
+    std::string reason;
+    REQUIRE(ws.resolve("notes/todo.txt", &out, &reason));
+    CHECK(out == ws.root() / "notes" / "todo.txt");
+    REQUIRE(ws.resolve("./notes//todo.txt", &out, &reason));
+    CHECK(out == ws.root() / "notes" / "todo.txt");
+    REQUIRE(ws.resolve(".", &out, &reason));
+    CHECK(out == ws.root());
+    REQUIRE(ws.resolve("a/../b", &out, &reason));
+    CHECK(out == ws.root() / "b");
+    REQUIRE(ws.resolve("a/..", &out, &reason));
+    CHECK(out == ws.root());
+    REQUIRE(ws.resolve("new/dir/file.txt", &out, &reason));
+    CHECK(out == ws.root() / "new" / "dir" / "file.txt");
+    REQUIRE(ws.resolve("my..notes.txt", &out, &reason));
+    CHECK(out == ws.root() / "my..notes.txt");
+}
+
+TEST(ws_rejects_empty_nul_and_absolute) {
+    TempDir d;
+    Workspace ws(d.path());
+    fs::path out;
+    std::string reason;
+    CHECK(!ws.resolve("", &out, &reason));
+    CHECK(!reason.empty());
+    reason.clear();
+    std::string with_nul = std::string("notes") + '\0' + "/x";
+    CHECK(!ws.resolve(with_nul, &out, &reason));
+    CHECK(!reason.empty());
+    reason.clear();
+    CHECK(!ws.resolve("/etc/passwd", &out, &reason));
+    CHECK(!reason.empty());
+}
+
+TEST(ws_rejects_escapes) {
+    TempDir d;
+    Workspace ws(d.path());
+    fs::path out;
+    std::string reason;
+    CHECK(!ws.resolve("..", &out, &reason));
+    CHECK(!reason.empty());
+    reason.clear();
+    CHECK(!ws.resolve("../etc/passwd", &out, &reason));
+    CHECK(!reason.empty());
+    reason.clear();
+    CHECK(!ws.resolve("a/../../b", &out, &reason));
+    CHECK(!reason.empty());
+    reason.clear();
+    std::string reenter = "notes/../../" + ws.root().filename().string() + "/notes/todo.txt";
+    CHECK(!ws.resolve(reenter, &out, &reason));
+    CHECK(!reason.empty());
+}
+
+TEST(calc_left_to_right) {
+    double v = 0;
+    std::string err;
+    REQUIRE(eval("10 - 4 - 3", &v, &err));
+    CHECK(v == 3);
+    REQUIRE(eval("100 / 10 / 5", &v, &err));
+    CHECK(v == 2);
+}
+
+TEST(calc_parentheses_negatives_and_fractions) {
+    double v = 0;
+    std::string err;
+    REQUIRE(eval("(2 + 3) * 4", &v, &err));
+    CHECK(v == 20);
+    REQUIRE(eval("2 * (3 + 4) - 5", &v, &err));
+    CHECK(v == 9);
+    REQUIRE(eval("-3 * -3", &v, &err));
+    CHECK(v == 9);
+    REQUIRE(eval("7 / 2", &v, &err));
+    CHECK(v == 3.5);
+}
+
+TEST(calc_division_by_zero_in_parentheses) {
+    double v = 0;
+    std::string err;
+    CHECK(!eval("1 / (2 - 2)", &v, &err));
+    CHECK(err == "division by zero");
+}
+
+TEST(calc_my_own_expressions) {
+    double v = 0;
+    std::string err;
+    REQUIRE(eval("((1 + 2) * (3 + 4))", &v, &err));
+    CHECK(v == 21);
+    REQUIRE(eval("2 * -3 + 10", &v, &err));
+    CHECK(v == 4);
+}
 
 int main(int argc, char** argv) { return mt::run_all(argc, argv); }

@@ -69,5 +69,4 @@ private:
 
     std::vector<std::unique_ptr<Tool>> buckets;
     std::size_t count = 0;
-    void rehash();
 };

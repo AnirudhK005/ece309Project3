@@ -46,7 +46,9 @@ bool ToolRegistry::add(std::unique_ptr<Tool> newTool) {
             count++;
             return true;
         }
+        i = (i + 1) % buckets.size();
     }
+    return false;
     
 }
 
@@ -79,7 +81,9 @@ std::size_t ToolRegistry::bucket_count() const noexcept {
 }
 
 double ToolRegistry::load_factor() const noexcept {
-    return count / buckets.size();
+    double presentCount = count;
+    double total = buckets.size();
+    return presentCount / total;
 }
 
 std::size_t ToolRegistry::max_probe_length() const {

@@ -1,9 +1,5 @@
-// src/tools/tool_registry.cpp — YOU IMPLEMENT (spec §4.3).
-//
-// A hand-written hash table. No std::unordered_map / std::map / std::set.
-// Every function below is a stub so the starter compiles. Replace each body.
-
 #include "tools/tool_registry.h"
+#include <cstdint>
 
 ToolRegistry::ToolRegistry() : buckets(8){};
 ToolRegistry::~ToolRegistry() = default;
@@ -49,7 +45,7 @@ bool ToolRegistry::add(std::unique_ptr<Tool> newTool) {
         i = (i + 1) % buckets.size();
     }
     return false;
-    
+
 }
 
 Tool* ToolRegistry::find(std::string_view toolName) const {

@@ -69,6 +69,5 @@ private:
 
     std::vector<std::unique_ptr<Tool>> buckets;
     std::size_t count = 0;
-    std::size_t distance = 16;
     void rehash();
 };
